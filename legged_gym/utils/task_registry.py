@@ -15,6 +15,7 @@ from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobot
 class TaskRegistry():
     def __init__(self):
         self.task_classes = {}
+        print(f"self.task_classes: {self.task_classes}")
         self.env_cfgs = {}
         self.train_cfgs = {}
     
@@ -51,6 +52,8 @@ class TaskRegistry():
         # if no args passed get command line arguments
         if args is None:
             args = get_args()
+        print(f"Creating environment: {name}")
+        print(f"self.task_classes: {self.task_classes}")
         # check if there is a registered env with that name
         if name in self.task_classes:
             task_class = self.get_task_class(name)
