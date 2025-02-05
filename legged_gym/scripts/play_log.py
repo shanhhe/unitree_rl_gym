@@ -362,8 +362,9 @@ def play(args):
 
     env_cfg.env.test = True
     robot_index = 0  # Index of the robot to track
-    stop_state_log = 1000 # Number of steps for logging
+    stop_state_log = 1500 # Number of steps for logging
     joint_index = 4
+
     # Indices for the upper body links
 
     # Side View (Default)
@@ -396,7 +397,6 @@ def play(args):
         export_policy_as_jit(ppo_runner.alg.actor_critic, path)
         print('Exported policy as jit script to: ', path)
 
-    print(5 * int(env.max_episode_length))
     for i in range(5 * int(env.max_episode_length)):
         
         # Check and update command ranges
@@ -447,10 +447,13 @@ def play(args):
         # Logging states
         if i < stop_state_log:
             # print(f"Step {i}")
-
+            for j in range(env.num_actions):
+                logger.log_state(f'target_{env.dof_names[j]}', actions[robot_index, j].item() * env.cfg.control.action_scale)
+                logger.log_state(f'pos_{env.dof_names[j]}', env.dof_pos[robot_index, j].item())
+                logger.log_state(f'vel_{env.dof_names[j]}', env.dof_vel[robot_index, j].item())
+                logger.log_state(f'torque_{env.dof_names[j]}', env.torques[robot_index, j].item())
             logger.log_states(
                 {
-
                     # 'pitch_dev': pitch_dev,
                     # 'roll_dev': roll_dev,
                     # 'yaw_dev': yaw_dev,
@@ -465,15 +468,15 @@ def play(args):
                     # 'torso_pitch': torso_pitch,
                     # 'com_x':com_x,
                     # 'com_y':com_y,
-                    'dof_pos_target': actions[robot_index, joint_index].item() * env.cfg.control.action_scale,
-                    'dof_pos': env.dof_pos[robot_index, joint_index].item(),
+                    # 'dof_pos_target': actions[robot_index, joint_index].item() * env.cfg.control.action_scale,
+                    # 'dof_pos': env.dof_pos[robot_index, joint_index].item(),
                     # 'waist_roll_joint': env.dof_pos[robot_index, 12].item(),
                     # 'waist_pitch_joint': env.dof_pos[robot_index, 13].item(),
 
-                    'Left_knee_pos': env.dof_pos[robot_index, 3].item(),
-                    'Right_knee_pos': env.dof_pos[robot_index, 8].item(),
-                    'dof_vel': env.dof_vel[robot_index, joint_index].item(),
-                    'dof_torque': env.torques[robot_index, joint_index].item(),
+                    # 'Left_knee_pos': env.dof_pos[robot_index, 3].item(),
+                    # 'Right_knee_pos': env.dof_pos[robot_index, 8].item(),
+                    # 'dof_vel': env.dof_vel[robot_index, joint_index].item(),
+                    # 'dof_torque': env.torques[robot_index, joint_index].item(),
                     'command_x': env.commands[robot_index, 0].item(),
                     'command_y': env.commands[robot_index, 1].item(),
                     'command_yaw': env.commands[robot_index, 2].item(),
