@@ -1,6 +1,9 @@
 import numpy as np
 from collections import defaultdict
 from multiprocessing import Process, Value
+from torch.utils.tensorboard import SummaryWriter
+import os
+
 
 class Logger:
     def __init__(self, dt):
@@ -9,6 +12,8 @@ class Logger:
         self.dt = dt
         self.num_episodes = 0
         self.plot_process = None
+        self.log_dir = '/home/shanhe/unitree_rl_gym/legged_gym/data/bruce'
+        self.writer = None
 
     def log_state(self, key, value):
         self.state_log[key].append(value)
@@ -37,3 +42,23 @@ class Logger:
     def __del__(self):
         if self.plot_process is not None:
             self.plot_process.kill()
+
+    def plot_states(self):
+        if self.log_dir is not None and self.writer is None:
+            if not os.path.exists(self.log_dir):
+                os.makedirs(self.log_dir)
+            self.writer = SummaryWriter(log_dir=self.log_dir, flush_secs=10)
+
+        for key, values in self.state_log.items():
+            print(f"Plotting {key}")
+            print(f"len(values): {len(values)}")
+            for it, value in enumerate(values):
+                if key == 'contact_forces_z':
+                    self.writer.add_scalar(f'{key}/left', value[0], it)
+                    self.writer.add_scalar(f'{key}/right', value[1], it)
+                else:
+                    self.writer.add_scalar(f'State/{key}', value, it)
+                
+            # self.writer.add_scalar(f'State/{key}', values, it)
+        
+

@@ -10,6 +10,8 @@ from legged_gym.utils import  get_args, export_policy_as_jit, task_registry, Log
 
 from legged_gym.utils.isaacgym_utils import get_euler_xyz as get_euler_xyz_in_tensor
 
+from torch.utils.tensorboard import SummaryWriter
+
 
 import numpy as np
 import torch
@@ -394,7 +396,9 @@ def play(args):
         export_policy_as_jit(ppo_runner.alg.actor_critic, path)
         print('Exported policy as jit script to: ', path)
 
+    print(5 * int(env.max_episode_length))
     for i in range(5 * int(env.max_episode_length)):
+        
         # Check and update command ranges
         command_interface = _check_command_interface()
         _update_command_ranges(env, command_interface)
@@ -403,26 +407,26 @@ def play(args):
         
 
 
-        upper_body_rpy, pelvis_rpy, waist_rpy, torso_rpy = env._extract_upper_body_rpy()
-        upper_body_rpy_numpy = upper_body_rpy.detach().cpu().numpy()
-        pelvis_rpy = pelvis_rpy.detach().cpu().numpy()
-        waist_rpy = waist_rpy.detach().cpu().numpy()
-        torso_rpy = torso_rpy.detach().cpu().numpy()
-        pelvis_roll = pelvis_rpy[:,0]
-        waist_roll = waist_rpy[:,0]
-        torso_roll = torso_rpy[:,0]
-        pelvis_pitch = pelvis_rpy[:,1]
-        waist_pitch = waist_rpy[:,1]
-        torso_pitch = torso_rpy[:,1]
+        # upper_body_rpy, pelvis_rpy, waist_rpy, torso_rpy = env._extract_upper_body_rpy()
+        # upper_body_rpy_numpy = upper_body_rpy.detach().cpu().numpy()
+        # pelvis_rpy = pelvis_rpy.detach().cpu().numpy()
+        # waist_rpy = waist_rpy.detach().cpu().numpy()
+        # torso_rpy = torso_rpy.detach().cpu().numpy()
+        # pelvis_roll = pelvis_rpy[:,0]
+        # waist_roll = waist_rpy[:,0]
+        # torso_roll = torso_rpy[:,0]
+        # pelvis_pitch = pelvis_rpy[:,1]
+        # waist_pitch = waist_rpy[:,1]
+        # torso_pitch = torso_rpy[:,1]
 
-        upper_roll = upper_body_rpy_numpy[:,0]
-        upper_pitch = upper_body_rpy_numpy[:,1]
-        upper_yaw = upper_body_rpy_numpy[:,2]
-        # com = env.calculate_center_of_mass()
-        com = env.calculate_upper_body_com_local()
-        com = com.detach().cpu().numpy()
-        com_x = com[:,0]
-        com_y = com[:,1]
+        # upper_roll = upper_body_rpy_numpy[:,0]
+        # upper_pitch = upper_body_rpy_numpy[:,1]
+        # upper_yaw = upper_body_rpy_numpy[:,2]
+        # # com = env.calculate_center_of_mass()
+        # com = env.calculate_upper_body_com_local()
+        # com = com.detach().cpu().numpy()
+        # com_x = com[:,0]
+        # com_y = com[:,1]
 
 
 
@@ -442,30 +446,32 @@ def play(args):
 
         # Logging states
         if i < stop_state_log:
+            # print(f"Step {i}")
+
             logger.log_states(
                 {
 
                     # 'pitch_dev': pitch_dev,
                     # 'roll_dev': roll_dev,
                     # 'yaw_dev': yaw_dev,
-                    'pitch': upper_pitch,
-                    'roll': upper_roll,
-                    'yaw': upper_yaw,
-                    'pelvis_pitch': pelvis_pitch,
-                    'pelvis_roll': pelvis_roll,
-                    'waist_pitch': waist_pitch,
-                    'waist_roll': waist_roll,
-                    'torso_roll': torso_roll,
-                    'torso_pitch': torso_pitch,
-                    'com_x':com_x,
-                    'com_y':com_y,
+                    # 'pitch': upper_pitch,
+                    # 'roll': upper_roll,
+                    # 'yaw': upper_yaw,
+                    # 'pelvis_pitch': pelvis_pitch,
+                    # 'pelvis_roll': pelvis_roll,
+                    # 'waist_pitch': waist_pitch,
+                    # 'waist_roll': waist_roll,
+                    # 'torso_roll': torso_roll,
+                    # 'torso_pitch': torso_pitch,
+                    # 'com_x':com_x,
+                    # 'com_y':com_y,
                     'dof_pos_target': actions[robot_index, joint_index].item() * env.cfg.control.action_scale,
                     'dof_pos': env.dof_pos[robot_index, joint_index].item(),
-                    'waist_roll_joint': env.dof_pos[robot_index, 12].item(),
-                    'waist_pitch_joint': env.dof_pos[robot_index, 13].item(),
+                    # 'waist_roll_joint': env.dof_pos[robot_index, 12].item(),
+                    # 'waist_pitch_joint': env.dof_pos[robot_index, 13].item(),
 
                     'Left_knee_pos': env.dof_pos[robot_index, 3].item(),
-                    'Right_knee_pos': env.dof_pos[robot_index, 9].item(),
+                    'Right_knee_pos': env.dof_pos[robot_index, 8].item(),
                     'dof_vel': env.dof_vel[robot_index, joint_index].item(),
                     'dof_torque': env.torques[robot_index, joint_index].item(),
                     'command_x': env.commands[robot_index, 0].item(),
@@ -480,24 +486,23 @@ def play(args):
             )
         elif i == stop_state_log:
             logger.plot_states()
-            # plot_deviations(logger.state_log, save_path='/home/tianhu/unitree_rl_gym/logs/upper_body_deviations.png')
-            plot_upper_body_orientation(
-            logger.state_log, 
-            save_path='/home/tianhu/unitree_rl_gym/logs/upper_body_orientation.png'
-    )
-            plot_com(
-            logger.state_log, 
-            save_path='/home/tianhu/unitree_rl_gym/logs/com.png'
-    )
-            plot_waist_torso_joint_angles(
-            logger.state_log, 
-            save_path='/home/tianhu/unitree_rl_gym/logs/waist_roll_pitch_joint.png'
-    )
+            # plot_deviations(logger.state_log, save_path='/home/shanhe/unitree_rl_gym/logs/upper_body_deviations.png')
+    #         plot_upper_body_orientation(
+    #         logger.state_log, 
+    #         save_path='/home/shanhe/unitree_rl_gym/logs/upper_body_orientation.png'
+    # )
+            # plot_com(
+            # logger.state_log, 
+            # save_path='/home/shanhe/unitree_rl_gym/logs/com.png')
+    #         plot_waist_torso_joint_angles(
+    #         logger.state_log, 
+    #         save_path='/home/shanhe/unitree_rl_gym/logs/waist_roll_pitch_joint.png'
+    # )
     
-            plot_joint_and_orientation_every_100_steps(
-            logger.state_log, 
-            save_dir='/home/tianhu/unitree_rl_gym/logs/upper_body_plots'
-    )
+    #         plot_joint_and_orientation_every_100_steps(
+    #         logger.state_log, 
+    #         save_dir='/home/shanhe/unitree_rl_gym/logs/upper_body_plots'
+    # )
 
             pass
 
@@ -510,7 +515,7 @@ def play(args):
             logger.print_rewards()
 
     # Save logged states
-    save_states_to_csv(logger.state_log, env.dt, '/home/tianhu/unitree_rl_gym/data/g1_sim/straight_knee')
+    # save_states_to_csv(logger.state_log, env.dt, '/home/shanhe/unitree_rl_gym/data/bruce')
 
 
 if __name__ == '__main__':
@@ -518,5 +523,8 @@ if __name__ == '__main__':
     RECORD_FRAMES = False
     MOVE_CAMERA = True
     args = get_args()
+    args.task = 'bruce'
+    args.load_run = '/home/shanhe/unitree_rl_gym/logs/bruce/Feb05_01-22-47_'
+    args.headless = True
     play(args)
 
