@@ -152,14 +152,10 @@ def play(args):
     env_cfg.domain_rand.randomize_friction = False
     env_cfg.domain_rand.push_robots = False
 
-    
 
     env_cfg.env.test = True
     robot_index = 0  # Index of the robot to track
-    stop_state_log = 200  # Number of steps for logging
-    joint_index = 4
-
-
+    stop_state_log = 500  # Number of steps for logging states
 
     camera_offset = np.array([0.0, -3.0, 1.0])  # Adjust this offset as needed
 
@@ -167,6 +163,7 @@ def play(args):
     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
     obs = env.get_observations()
     logger = Logger(env.dt)
+    logger.log_dir = args.log_dir
     stop_rew_log = env.max_episode_length + 1  # Steps for average reward calculation
 
 
@@ -182,12 +179,12 @@ def play(args):
     #     export_policy_as_jit(ppo_runner.alg.actor_critic, path)
     #     print('Exported policy as jit script to: ', path)
     # Define the sine wave parameters
-    amplitude = 0.2  # Amplitude of the sine wave
-    frequency = 0.05  # Frequency of the sine wave (Hz)
+    amplitude = args.amplitude  # Amplitude of the sine wave
+    frequency = args.frequency  # Frequency of the sine wave (Hz)
     time_step = env.dt  # Time step of the simulation
     time = 0  # Initialize time
 
-    for i in range(2 * int(env.max_episode_length)):
+    for i in range(5 * int(env.max_episode_length)):
         # Check and update command ranges
         # command_interface = _check_command_interface()
         # _update_command_ranges(env, command_interface)
@@ -197,8 +194,8 @@ def play(args):
         # Correct initialization of custom_actions
         custom_actions = torch.zeros((env.num_envs, env.num_actions), device=env.device)
 
-        #{'ankle_pitch_l': 4, 'ankle_pitch_r': 9, 'hip_pitch_l': 1, 'hip_pitch_r': 6, 'hip_roll_l': 2, 'hip_roll_r': 7, 'hip_yaw_l': 0, 'hip_yaw_r': 5, 'knee_pitch_l': 3, 'knee_pitch_r': 8}
-        joint_name = 'ankle_pitch_l'  # Index for waist_roll_joint
+    
+        joint_name = args.joint_name  # Index for waist_roll_joint
         joint_index = env.dof_dict[joint_name]
 
         # Custom PD tuning values (these can be tuned interactively or systematically)
@@ -214,8 +211,8 @@ def play(args):
         time += time_step
         # p_gains = torch.tensor([100.0, 50], device=env.device)  # PD position gains for roll and pitch
         # d_gains = torch.tensor([6.0, 4.0], device=env.device)    # PD velocity gains for roll and pitch
-        p_gains = torch.tensor([10], device=env.device)  # PD position gains for roll and pitch
-        d_gains = torch.tensor([1], device=env.device)    # PD velocity gains for roll and pitch
+        p_gains = torch.tensor([args.p_gain], device=env.device)  # PD position gains for roll and pitch
+        d_gains = torch.tensor([args.d_gain], device=env.device)    # PD velocity gains for roll and pitch
 
         # Calculate torques for waist joints
         # joint_positions = env.dof_pos[:, [waist_roll_index, waist_pitch_index]]
@@ -227,12 +224,12 @@ def play(args):
         joint_velocities = env.dof_vel[:, [joint_index]]
         # torques = p_gains * (desired_positions[:, [waist_roll_index, waist_pitch_index]] - joint_positions) \
         #         - d_gains * joint_velocities
-        torques = p_gains * (desired_positions[:, [joint_index]] - joint_positions) \
+        torques = p_gains * (desired_positions[:, joint_index] - joint_positions) \
                 - d_gains * joint_velocities
-        
+        # print('torques:',torques)
         # Apply calculated torques
         # custom_actions[:, [waist_roll_index, waist_pitch_index]] = torques
-        custom_actions[:, [joint_index]] = torques
+        custom_actions[:, joint_index] = torques
         # print('custom_actions:',custom_actions))
 
         # Step the environment with custom actions
@@ -261,27 +258,31 @@ def play(args):
             filename = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'frames', f'{i}.png')
             env.gym.write_viewer_image_to_file(env.viewer, filename)
 
-
-
         # Logging states
         if i < stop_state_log:
             logger.log_states(
             {
-                'waist_roll_torque': torques[:, 0].cpu().numpy(),
+                f'torque_{args.joint_name}': torques[:, 0].cpu().numpy(),
                 # 'waist_pitch_torque': torques[:, 1].cpu().numpy(),
-                'waist_roll_position': joint_positions[:, 0].cpu().numpy(),
+                f'position_{args.joint_name}': joint_positions[:, 0].cpu().numpy(),
                 # 'waist_pitch_position': joint_positions[:, 1].cpu().numpy(),
-                'waist_roll_velocity': joint_velocities[:, 0].cpu().numpy(),
-                'desired_position': desired_positions[:, joint_index].cpu().numpy(),
+                f'velocity_{args.joint_name}': joint_velocities[:, 0].cpu().numpy(),
+                f'desired_position_{args.joint_name}': desired_positions[:, joint_index].cpu().numpy(),
+                f'error_{args.joint_name}': (desired_positions[:, joint_index] - joint_positions[:, 0]).cpu().numpy(),
 
                 # 'waist_pitch_velocity': joint_velocities[:, 1].cpu().numpy(),
             }
         )
-        # elif i == stop_state_log:
+        elif i == stop_state_log:
+            logger.plot_states(p_gains.item(), d_gains.item())
+            stop_state_log += 500
+            args.p_gain += 0.01
+            # args.d_gain *= 5
+            env.gym.set_dof_position_target_tensor(env.sim, gymtorch.unwrap_tensor(desired_positions))
         #     # logger.plot_states()
         #     plot_logged_data(logger.state_log)
 
-        #     pass
+            
 
         # Logging rewards
         # if 0 < i < stop_rew_log and infos["episode"]:
@@ -302,5 +303,13 @@ if __name__ == '__main__':
 
     args = get_args()
     args.task='bruce'
-    
+    args.num_envs = 1
+    #{'ankle_pitch_l': 4, 'ankle_pitch_r': 9, 'hip_pitch_l': 1, 'hip_pitch_r': 6, 'hip_roll_l': 2, 'hip_roll_r': 7, 'hip_yaw_l': 0, 'hip_yaw_r': 5, 'knee_pitch_l': 3, 'knee_pitch_r': 8}
+    args.joint_name = 'hip_yaw_l'
+    args.amplitude = 0.2  # Amplitude of the sine wave
+    args.frequency = 0.05  # Frequency of the sine wave (Hz)
+    args.log_dir = '/home/shanhe/unitree_rl_gym/legged_gym/data/PD_tuning'
+    args.p_gain = 3.3
+    args.d_gain = 0
+
     play(args)
