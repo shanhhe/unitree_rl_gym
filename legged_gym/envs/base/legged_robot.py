@@ -18,7 +18,7 @@ from legged_gym.utils.isaacgym_utils import get_euler_xyz as get_euler_xyz_in_te
 from legged_gym.utils.helpers import class_to_dict
 from .legged_robot_config import LeggedRobotCfg
 
-class LeggedRobot(BaseTask):
+class  LeggedRobot(BaseTask):
     def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless):
         """ Parses the provided config file,
             calls create_sim() (which creates, simulation and environments),
@@ -52,7 +52,6 @@ class LeggedRobot(BaseTask):
         Args:
             actions (torch.Tensor): Tensor of shape (num_envs, num_actions_per_env)
         """
-
         clip_actions = self.cfg.normalization.clip_actions
         self.actions = torch.clip(actions, -clip_actions, clip_actions).to(self.device)
         # step physics and render each frame
@@ -97,6 +96,21 @@ class LeggedRobot(BaseTask):
         self.base_lin_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+
+        # Compute current lin and ang vel errors
+        # print("self.commands[:, :2]:", self.commands[:, :2])
+        # print("self.base_lin_vel[:, :2]:", self.base_lin_vel[:, :2])
+        # print(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]))
+        # print(torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1))
+        
+        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+        ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
+        # lin_vel_error = torch.abs(self.commands[:, 0] - self.base_lin_vel[:, 0])
+        # ang_vel_error = torch.abs(self.commands[:, 2] - self.base_ang_vel[:, 2])
+        # print("lin_vel_error:", lin_vel_error)
+        # accumulate errors
+        self.lin_vel_error_sum += lin_vel_error
+        self.ang_vel_error_sum += ang_vel_error
 
         self._post_physics_step_callback()
 
@@ -151,9 +165,23 @@ class LeggedRobot(BaseTask):
         self.reset_buf[env_ids] = 1
         # fill extras
         self.extras["episode"] = {}
+        # print("self.episode_sums.keys():", self.episode_sums.keys())
+        # print("self.command[env_ids]:", self.commands[env_ids][0])
+        # print("ang_vel_x:", self.episode_sums["tracking_ang_vel"][env_ids])
         for key in self.episode_sums.keys():
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
+        
+        # Calculate mean lin vel and ang vel error
+        lin_vel_error_mean = torch.mean(self.lin_vel_error_sum[env_ids]) / self.max_episode_length_s
+        ang_vel_error_mean = torch.mean(self.ang_vel_error_sum[env_ids]) / self.max_episode_length_s
+        # print("lin_vel_error_mean:", lin_vel_error_mean)
+        self.extras["episode"]["lin_vel_error"] = lin_vel_error_mean
+        self.extras["episode"]["ang_vel_error"] = ang_vel_error_mean
+        self.lin_vel_error_sum[env_ids] = 0.
+        self.ang_vel_error_sum[env_ids] = 0.
+        # lin_vel_error_mean = torch.mean(self.episode_sums["lin_vel_error"][env_ids]) / self.max_episode_length
+
         if self.cfg.commands.curriculum:
             self.extras["episode"]["max_command_x"] = self.command_ranges["lin_vel_x"][1]
         # send timeout info to the algorithm
@@ -431,6 +459,26 @@ class LeggedRobot(BaseTask):
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
 
+        # 获取当前环境中的所有 actor 句柄
+        actor_handles = [self.gym.get_actor_handle(env, 0) for env in self.envs]
+        # print("Actor Handles:", actor_handles)
+
+        # 选取某个 actor
+        actor_handle = actor_handles[0]  # 这里假设我们只关心第一个 actor
+
+        # 获取该 actor 关联的 DOF 名称列表
+        dof_names = self.gym.get_actor_dof_names(self.envs[0], actor_handle)
+
+        # 获取该 actor 关联的 DOF 索引字典 (name -> index)
+        self.dof_dict = self.gym.get_actor_dof_dict(self.envs[0], actor_handle)
+
+        # Reverse the dictionary to get the name of the DOF from the index
+        self.dof_names = {v: k for k, v in self.dof_dict.items()}
+
+        
+        # print("DOF Names:", dof_names)
+        # print("DOF Index Mapping:", dof_dict)
+
         # create some wrapper tensors for different slices
         self.root_states = gymtorch.wrap_tensor(actor_root_state)
         self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
@@ -461,6 +509,9 @@ class LeggedRobot(BaseTask):
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+
+        self.lin_vel_error_sum = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        self.ang_vel_error_sum = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
       
 
         # joint positions offsets and PD gains
@@ -501,6 +552,7 @@ class LeggedRobot(BaseTask):
                 continue
             self.reward_names.append(name)
             name = '_reward_' + name
+            # print(f"Adding reward function: {name}")
             self.reward_functions.append(getattr(self, name))
 
         # reward episode sums
@@ -563,7 +615,6 @@ class LeggedRobot(BaseTask):
         termination_contact_names = []
         for name in self.cfg.asset.terminate_after_contacts_on:
             termination_contact_names.extend([s for s in body_names if name in s])
-
         base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
         self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)
         start_pose = gymapi.Transform()
@@ -618,7 +669,7 @@ class LeggedRobot(BaseTask):
         spacing = self.cfg.env.env_spacing
         self.env_origins[:, 0] = spacing * xx.flatten()[:self.num_envs]
         self.env_origins[:, 1] = spacing * yy.flatten()[:self.num_envs]
-        self.env_origins[:, 2] = 0.
+        self.env_origins[:, 2] = self.cfg.init_state.pos[2]
 
     def _parse_cfg(self, cfg):
         self.dt = self.cfg.control.decimation * self.sim_params.dt
