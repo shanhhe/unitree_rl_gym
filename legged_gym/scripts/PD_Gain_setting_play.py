@@ -74,22 +74,67 @@ def _update_command_ranges(env, command_interface):
 
 
 
-def stabilize_robot(env):
+def stabilize_robot(env, joint_index):
     # Define the fixed root state for the robot
-    fixed_position = [0.0, 0.0, 1.0]  # x, y, z position
-    fixed_orientation = [0.0, 0.0, 0.0, 1.0]  # Quaternion: x, y, z, w
-
+    # fixed_position = [0.0, 0.0, 1.5]  # x, y, z position
+    # fixed_orientation = [0.0, 0.0, 0.0, 1.0]  # Quaternion: x, y, z, w
+    # print('num_envs:',env.num_envs)
     # Create a tensor for the root states
-    root_states = torch.zeros((env.num_envs, 13), device=env.device, dtype=torch.float32)
+    # root_states = torch.zeros((env.num_envs, 13), device=env.device, dtype=torch.float32)
     
     # Set position (indices 0, 1, 2)
-    root_states[:, 0:3] = torch.tensor(fixed_position, device=env.device)
+    # root_states[:, 0:3] = torch.tensor(fixed_position, device=env.device)
 
     # Set orientation (indices 3, 4, 5, 6)
-    root_states[:, 3:7] = torch.tensor(fixed_orientation, device=env.device)
+    # root_states[:, 3:7] = torch.tensor(fixed_orientation, device=env.device)
 
+    default_dof_pose = env.default_dof_pos.transpose(0, 1)
+    
     # Set the root state for all environments
-    env.gym.set_actor_root_state_tensor(env.sim, gymtorch.unwrap_tensor(root_states))
+    # env.gym.set_actor_root_state_tensor(env.sim, gymtorch.unwrap_tensor(root_states))
+
+
+
+    base_handle = env.gym.get_actor_handle(env.envs[0], 0)
+
+    _dof_states = env.gym.acquire_dof_state_tensor(env.sim)
+    
+    dof_states = gymtorch.wrap_tensor(_dof_states)
+
+    num_dofs = env.gym.get_actor_dof_count(env.envs[0], base_handle)
+
+    
+
+    all_dof_states = dof_states.clone()
+
+    
+    # fixed_states = torch.
+    
+    env_index = 0
+    num_envs = args.num_envs
+    start_index = env_index * num_dofs
+    end_index = start_index + num_dofs
+
+    # print(dof_states[start_index:end_index])
+
+    env_dof_states = dof_states[start_index:end_index, :]
+    for dof_idx in range(num_dofs):
+        if dof_idx != joint_index:
+            env_dof_states[dof_idx, 0] = default_dof_pose[dof_idx]
+            env_dof_states[dof_idx, 1] = 0.0
+    all_dof_states[start_index:end_index, :] = env_dof_states
+    actor_indices = torch.tensor([0], dtype=torch.int32, device=env.device)
+
+    # prop = env.gym.get_actor_dof_properties(env.envs[0], 0)
+    # for i in range(num_dofs):
+    #     # if i != joint_index:
+    #     print(prop['stiffness'])
+    # print(all_dof_states)
+    env.gym.set_dof_state_tensor_indexed(env.sim, gymtorch.unwrap_tensor(all_dof_states), gymtorch.unwrap_tensor(actor_indices), 1)
+
+
+
+    env.gym.refresh_dof_state_tensor(env.sim)
 
 
 
@@ -145,23 +190,30 @@ def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
     # Override some parameters for testing
     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 1)
+    init_pos = [0.0, 0.0, 1]  # Initial position of the robot
+    init_ori = [0.0, 0.0, 0.0, 1.0]  # Initial orientation of the robot
+    env_cfg.init_state.pos = init_pos
+    env_cfg.init_state.rot = init_ori
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.num_cols = 5
     env_cfg.terrain.curriculum = False
     env_cfg.noise.add_noise = False
     env_cfg.domain_rand.randomize_friction = False
     env_cfg.domain_rand.push_robots = False
-
+    env_cfg.asset.fix_base_link = True
+    env_cfg.control.control_type = 'T'
+    env_cfg.control.action_scale = 1.0
 
     env_cfg.env.test = True
     robot_index = 0  # Index of the robot to track
-    stop_state_log = 500  # Number of steps for logging states
+    stop_state_log = 200  # Number of steps for logging states
 
     camera_offset = np.array([0.0, -3.0, 1.0])  # Adjust this offset as needed
 
     # Prepare environment
-    env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
-    obs = env.get_observations()
+    env, env_cfg = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
+    # obs = env.get_observations()
+
     logger = Logger(env.dt)
     logger.log_dir = args.log_dir
     stop_rew_log = env.max_episode_length + 1  # Steps for average reward calculation
@@ -205,7 +257,8 @@ def play(args):
         time_tensor = torch.tensor(time, device=env.device)
 
         # Compute the desired position as a sine wave
-        desired_positions[:, [joint_index]] = amplitude * torch.sin(2 * np.pi * frequency * time_tensor)
+        # desired_positions[:, [joint_index]] = amplitude * torch.sin(2 * np.pi * frequency * time_tensor)
+        desired_positions[:, [joint_index]] = 1
 
         # Increment time
         time += time_step
@@ -246,7 +299,7 @@ def play(args):
         )
 
         # Apply the fixed root state
-        stabilize_robot(env)
+        stabilize_robot(env, joint_index)
 
 
         # Update the camera position dynamically
@@ -262,6 +315,7 @@ def play(args):
         if i < stop_state_log:
             logger.log_states(
             {
+                f'actual_torque_{args.joint_name}': env.torques[:, joint_index].cpu().numpy(),
                 f'torque_{args.joint_name}': torques[:, 0].cpu().numpy(),
                 # 'waist_pitch_torque': torques[:, 1].cpu().numpy(),
                 f'position_{args.joint_name}': joint_positions[:, 0].cpu().numpy(),
@@ -269,15 +323,16 @@ def play(args):
                 f'velocity_{args.joint_name}': joint_velocities[:, 0].cpu().numpy(),
                 f'desired_position_{args.joint_name}': desired_positions[:, joint_index].cpu().numpy(),
                 f'error_{args.joint_name}': (desired_positions[:, joint_index] - joint_positions[:, 0]).cpu().numpy(),
-
+                f'p_gain_{args.joint_name}': p_gains.item(),
+                f'd_gain_{args.joint_name}': d_gains.item(),
                 # 'waist_pitch_velocity': joint_velocities[:, 1].cpu().numpy(),
             }
         )
         elif i == stop_state_log:
             logger.plot_states(p_gains.item(), d_gains.item())
-            stop_state_log += 500
-            args.p_gain += 0.01
-            # args.d_gain *= 5
+            stop_state_log += 200
+            args.p_gain += 0.5
+            # args.d_gain += 0.01
             env.gym.set_dof_position_target_tensor(env.sim, gymtorch.unwrap_tensor(desired_positions))
         #     # logger.plot_states()
         #     plot_logged_data(logger.state_log)
@@ -305,11 +360,11 @@ if __name__ == '__main__':
     args.task='bruce'
     args.num_envs = 1
     #{'ankle_pitch_l': 4, 'ankle_pitch_r': 9, 'hip_pitch_l': 1, 'hip_pitch_r': 6, 'hip_roll_l': 2, 'hip_roll_r': 7, 'hip_yaw_l': 0, 'hip_yaw_r': 5, 'knee_pitch_l': 3, 'knee_pitch_r': 8}
-    args.joint_name = 'hip_yaw_l'
-    args.amplitude = 0.2  # Amplitude of the sine wave
-    args.frequency = 0.05  # Frequency of the sine wave (Hz)
+    args.joint_name = 'ankle_pitch_l'
+    args.amplitude = 1  # Amplitude of the sine wave
+    args.frequency = 0.5  # Frequency of the sine wave (Hz)
     args.log_dir = '/home/shanhe/unitree_rl_gym/legged_gym/data/PD_tuning'
-    args.p_gain = 3.3
+    args.p_gain = 0
     args.d_gain = 0
 
     play(args)
