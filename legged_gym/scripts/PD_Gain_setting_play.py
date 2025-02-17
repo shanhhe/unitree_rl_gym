@@ -190,7 +190,7 @@ def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
     # Override some parameters for testing
     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 1)
-    init_pos = [0.0, 0.0, 1]  # Initial position of the robot
+    init_pos = [0.0, 0.0, 1.5]  # Initial position of the robot
     init_ori = [0.0, 0.0, 0.0, 1.0]  # Initial orientation of the robot
     env_cfg.init_state.pos = init_pos
     env_cfg.init_state.rot = init_ori
@@ -203,12 +203,13 @@ def play(args):
     env_cfg.asset.fix_base_link = True
     env_cfg.control.control_type = 'T'
     env_cfg.control.action_scale = 1.0
+    # env_cfg.asset.disable_gravity = True
 
     env_cfg.env.test = True
     robot_index = 0  # Index of the robot to track
     stop_state_log = 200  # Number of steps for logging states
 
-    camera_offset = np.array([0.0, -3.0, 1.0])  # Adjust this offset as needed
+    camera_offset = np.array([2.0, 0.0, 1.0])  # Adjust this offset as needed
 
     # Prepare environment
     env, env_cfg = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
@@ -236,7 +237,7 @@ def play(args):
     time_step = env.dt  # Time step of the simulation
     time = 0  # Initialize time
 
-    for i in range(5 * int(env.max_episode_length)):
+    for i in range(int(env.max_episode_length)):
         # Check and update command ranges
         # command_interface = _check_command_interface()
         # _update_command_ranges(env, command_interface)
@@ -258,12 +259,12 @@ def play(args):
 
         # Compute the desired position as a sine wave
         # desired_positions[:, [joint_index]] = amplitude * torch.sin(2 * np.pi * frequency * time_tensor)
-        desired_positions[:, [joint_index]] = 1
+        desired_positions[:, [joint_index]] = 1.5
 
         # Increment time
         time += time_step
         # p_gains = torch.tensor([100.0, 50], device=env.device)  # PD position gains for roll and pitch
-        # d_gains = torch.tensor([6.0, 4.0], device=env.device)    # PD velocity gains for roll and pitch
+        # d_gains = torch.tensor([6.0, 4.0], device=env.device)    # PD velocity gains for rol·l and pitch
         p_gains = torch.tensor([args.p_gain], device=env.device)  # PD position gains for roll and pitch
         d_gains = torch.tensor([args.d_gain], device=env.device)    # PD velocity gains for roll and pitch
 
@@ -283,12 +284,11 @@ def play(args):
         # Apply calculated torques
         # custom_actions[:, [waist_roll_index, waist_pitch_index]] = torques
         custom_actions[:, joint_index] = torques
-        # print('custom_actions:',custom_actions))
 
         # Step the environment with custom actions
         obs, _, rews, dones, infos = env.step(custom_actions)
 
-
+        # print('env.torques:',env.torques)
         # Attach the robot to a fixed point in the simulation
         base_handle = env.gym.get_actor_handle(env.envs[0], 0)
 
@@ -330,10 +330,10 @@ def play(args):
         )
         elif i == stop_state_log:
             logger.plot_states(p_gains.item(), d_gains.item())
-            stop_state_log += 200
-            args.p_gain += 0.5
-            # args.d_gain += 0.01
-            env.gym.set_dof_position_target_tensor(env.sim, gymtorch.unwrap_tensor(desired_positions))
+            stop_state_log += 1000
+            # args.p_gain += 8
+            # args.d_gain += 0.05
+            # env.gym.set_dof_position_target_tensor(env.sim, gymtorch.unwrap_tensor(desired_positions))
         #     # logger.plot_states()
         #     plot_logged_data(logger.state_log)
 
@@ -360,11 +360,11 @@ if __name__ == '__main__':
     args.task='bruce'
     args.num_envs = 1
     #{'ankle_pitch_l': 4, 'ankle_pitch_r': 9, 'hip_pitch_l': 1, 'hip_pitch_r': 6, 'hip_roll_l': 2, 'hip_roll_r': 7, 'hip_yaw_l': 0, 'hip_yaw_r': 5, 'knee_pitch_l': 3, 'knee_pitch_r': 8}
-    args.joint_name = 'ankle_pitch_l'
+    args.joint_name = 'hip_pitch_r'
     args.amplitude = 1  # Amplitude of the sine wave
     args.frequency = 0.5  # Frequency of the sine wave (Hz)
     args.log_dir = '/home/shanhe/unitree_rl_gym/legged_gym/data/PD_tuning'
-    args.p_gain = 0
+    args.p_gain = 50.0
     args.d_gain = 0
 
     play(args)

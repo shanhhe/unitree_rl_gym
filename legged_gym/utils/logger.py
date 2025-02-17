@@ -17,7 +17,7 @@ class Logger:
         self.writer = None
 
     def log_state(self, key, value):
-        print(key)
+        # print(key)
         self.state_log[key].append(value)
 
     def log_states(self, dict):
@@ -45,9 +45,9 @@ class Logger:
         if self.plot_process is not None:
             self.plot_process.kill()
 
-    def plot_states(self):
+    def plot_states(self, p, d):
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        self.log_dir = os.path.join(self.log_dir, timestamp)
+        self.log_dir = os.path.join(self.log_dir, f'p_gain_{p}_d_gain_{d}', timestamp)
         if self.log_dir is not None and self.writer is None:
             if not os.path.exists(self.log_dir):
                 os.makedirs(self.log_dir)
