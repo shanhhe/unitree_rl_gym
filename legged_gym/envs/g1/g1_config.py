@@ -60,6 +60,7 @@ class G1RoughCfg( LeggedRobotCfg ):
         file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/g1_description/g1_12dof.urdf'
         name = "g1"
         foot_name = "ankle_roll"
+        knee_name = "knee"
         penalize_contacts_on = ["hip", "knee"]
         terminate_after_contacts_on = ["pelvis"]
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
@@ -70,8 +71,8 @@ class G1RoughCfg( LeggedRobotCfg ):
         base_height_target = 0.78
         
         class scales( LeggedRobotCfg.rewards.scales ):
-            tracking_lin_vel = 1.0
-            tracking_ang_vel = 0.5
+            tracking_lin_vel = 2.0
+            tracking_ang_vel = 1.0
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
             orientation = -1.0
@@ -79,7 +80,7 @@ class G1RoughCfg( LeggedRobotCfg ):
             dof_acc = -2.5e-7
             dof_vel = -1e-3
             feet_air_time = 0.0
-            collision = 0.0
+            collision = -0.1
             action_rate = -0.01
             dof_pos_limits = -5.0
             alive = 0.15
@@ -87,6 +88,10 @@ class G1RoughCfg( LeggedRobotCfg ):
             contact_no_vel = -0.2
             feet_swing_height = -20.0
             contact = 0.18
+            straight_stance_phase = 0.8
+            penalty_knee_hyperextension = 1.0
+            stance_swing_coordination = 0.4
+            swing_height = 0.5
 
 class G1RoughCfgPPO( LeggedRobotCfgPPO ):
     class policy:
